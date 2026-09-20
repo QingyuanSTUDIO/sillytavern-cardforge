@@ -61,19 +61,20 @@
           <div class="hint mb-sm">从下拉选一条世界书条目，AI 按方向重写</div>
           <div class="form-group">
             <label>条目</label>
-            <input class="input mb-sm" v-model="entrySearch" placeholder="搜 标题 / 关键词 / 正文 / #id">
+            <input class="input mb-sm" v-model="entrySearch" placeholder="搜 标题 / 关键词 / 正文 / #序号">
             <select class="select" v-model="entrySelectedId">
               <option value="">— 选择条目（{{ filteredEntries.length }} / {{ worldEntries.length }}）—</option>
               <option v-for="e in filteredEntries" :key="e.id" :value="e.id">
-                #{{ e.id }} {{ e.comment || '(未命名)' }}
+                序号 {{ e.extensions?.cfSortKey ?? '—' }} · {{ e.comment || '(未命名)' }}
               </option>
             </select>
+            <div class="hint">序号和排列与世界书列表一致；输入 #2 可查找序号 2。</div>
           </div>
           <div class="form-group">
             <label>优化方向</label>
             <input class="input" v-model="entryDirection" placeholder="如：去除万能美人描写 / 加感官细节 / 缩短 30%">
           </div>
-          <button class="btn btn--primary btn--sm" :disabled="loading || !entrySelectedId" @click="runOptimizeEntry">
+          <button class="btn btn--primary btn--sm" :disabled="loading || entrySelectedId === ''" @click="runOptimizeEntry">
             {{ loading ? '改写中...' : '改写' }}
           </button>
           <div v-if="aiResult" class="ft-result">
@@ -175,6 +176,7 @@ import { useCardStore } from '../stores/card.js';
 import { useApiStore } from '../stores/api.js';
 import { useAppStore } from '../stores/app.js';
 import { buildCardContext } from '../utils/card-context.js';
+import { sortedWorldSections, groupWorldEntries } from '../utils/world-sections.js';
 import InspirationChat from './InspirationChat.vue';
 import { useFloatingToolsStore, FLOATING_TOOLS } from '../stores/floating-tools.js';
 
@@ -340,12 +342,19 @@ const entrySelectedId = ref('');
 const entryDirection = ref('');
 const entrySearch = ref('');
 // watch 注册时会立即读取筛选结果，先初始化其依赖。
-const worldEntries = computed(() => cardStore.worldEntries || []);
+const worldEntries = computed(() => {
+  const entries = (cardStore.worldEntries || []).slice().sort((a, b) =>
+    (a.extensions?.cfSortKey ?? 0) - (b.extensions?.cfSortKey ?? 0));
+  const sections = sortedWorldSections(cardStore.cardData.character_book);
+  return groupWorldEntries(entries, sections).flatMap(group => group.entries);
+});
 const filteredEntries = computed(() => {
   const q = entrySearch.value.trim().toLowerCase();
   if (!q) return worldEntries.value;
+  const sequence = q.match(/^#(\d+)$/);
+  if (sequence) return worldEntries.value.filter(e => e.extensions?.cfSortKey === Number(sequence[1]));
   return worldEntries.value.filter(e => {
-    if (String(e.id).includes(q)) return true;
+    if (String(e.extensions?.cfSortKey ?? '').includes(q)) return true;
     if ((e.comment || '').toLowerCase().includes(q)) return true;
     if ((e.content || '').toLowerCase().includes(q)) return true;
     const keys = Array.isArray(e.keys) ? e.keys : [];
@@ -355,7 +364,7 @@ const filteredEntries = computed(() => {
 });
 // 搜索过滤后，如果当前选中的 id 不在结果里，自动清掉避免下拉显示空白却 id 还在
 watch(filteredEntries, (list) => {
-  if (entrySelectedId.value && !list.some(e => e.id === entrySelectedId.value)) {
+  if (entrySelectedId.value !== '' && !list.some(e => e.id === entrySelectedId.value)) {
     entrySelectedId.value = '';
   }
 });
@@ -391,7 +400,7 @@ ${cardCtx(matchText)}
 }
 
 function applyEntryRewrite() {
-  if (!aiResult.value || !entrySelectedId.value) return;
+  if (!aiResult.value || entrySelectedId.value === '') return;
   const entry = worldEntries.value.find(e => e.id === entrySelectedId.value);
   if (!entry) {
     appStore.toastError('条目不存在了');
