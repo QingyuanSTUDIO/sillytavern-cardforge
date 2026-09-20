@@ -11,7 +11,11 @@
     <div v-else class="ft-panel" :style="panelStyle">
       <div class="ft-panel__header" @mousedown.prevent="onBallMouseDown">
         <span class="ft-panel__title">工具集</span>
-        <button class="ft-panel__close" @click.stop="expanded = false">×</button>
+        <div class="ft-panel__actions" @mousedown.stop>
+          <button class="ft-panel__close" @click.stop="toolSettings.settingsOpen = true"
+            title="悬浮窗设置" aria-label="悬浮窗设置">⚙</button>
+          <button class="ft-panel__close" @click.stop="expanded = false" aria-label="收起工具集">×</button>
+        </div>
       </div>
 
       <div class="ft-panel__tabs">
@@ -20,7 +24,8 @@
           @click="switchTool(t.key)">{{ t.short }}</button>
       </div>
 
-      <div class="ft-panel__body">
+      <div class="ft-panel__body" :class="{ 'ft-panel__body--chat': activeTool === 'chat' }">
+        <InspirationChat v-if="activeTool === 'chat'" />
         <!-- 写开场白 -->
         <div v-if="activeTool === 'greeting'">
           <div class="hint mb-sm">基于当前卡的 description / personality / scenario，让 AI 写个新开场白</div>
@@ -170,10 +175,13 @@ import { useCardStore } from '../stores/card.js';
 import { useApiStore } from '../stores/api.js';
 import { useAppStore } from '../stores/app.js';
 import { buildCardContext } from '../utils/card-context.js';
+import InspirationChat from './InspirationChat.vue';
+import { useFloatingToolsStore, FLOATING_TOOLS } from '../stores/floating-tools.js';
 
 const cardStore = useCardStore();
 const apiStore = useApiStore();
 const appStore = useAppStore();
+const toolSettings = useFloatingToolsStore();
 const route = useRoute();
 const router = useRouter();
 
@@ -241,30 +249,20 @@ const panelStyle = computed(() => {
   return { left: left - pos.x + 'px', top: top - pos.y + 'px' };
 });
 
-// 工具元数据
-const ALL_TOOLS = [
-  { key: 'greeting', short: '开场白' },
-  { key: 'optimize_entry', short: '改条目', onlyRoute: '/worldbook' },
-  { key: 'npc_name', short: '起NPC名' },
-  { key: 'explain_code', short: '解释码' },
-  { key: 'enrich_desc', short: '补 desc' },
-  { key: 'quick_diag', short: '去诊断', isJump: true }
-];
-
-const availableTools = computed(() => ALL_TOOLS.filter(t => {
+const availableTools = computed(() => toolSettings.enabledTools.filter(t => {
   if (t.onlyRoute && route.path !== t.onlyRoute) return false;
   return true;
 }));
 
-const activeTool = ref('greeting');
+const activeTool = ref(availableTools.value.find(tool => !tool.isJump)?.key || 'chat');
 watch(availableTools, (tools) => {
   if (!tools.find(t => t.key === activeTool.value)) {
-    activeTool.value = tools[0]?.key || 'greeting';
+    activeTool.value = tools.find(tool => !tool.isJump)?.key || 'chat';
   }
 });
 
 function switchTool(key) {
-  const tool = ALL_TOOLS.find(t => t.key === key);
+  const tool = FLOATING_TOOLS.find(t => t.key === key);
   if (tool?.isJump) {
     router.push('/diagnostic');
     expanded.value = false;
@@ -341,6 +339,8 @@ function applyGreeting() {
 const entrySelectedId = ref('');
 const entryDirection = ref('');
 const entrySearch = ref('');
+// watch 注册时会立即读取筛选结果，先初始化其依赖。
+const worldEntries = computed(() => cardStore.worldEntries || []);
 const filteredEntries = computed(() => {
   const q = entrySearch.value.trim().toLowerCase();
   if (!q) return worldEntries.value;
@@ -359,8 +359,6 @@ watch(filteredEntries, (list) => {
     entrySelectedId.value = '';
   }
 });
-
-const worldEntries = computed(() => cardStore.worldEntries || []);
 
 async function runOptimizeEntry() {
   loading.value = true;
@@ -546,6 +544,7 @@ function applyEnrichedDesc() {
 }
 .ft-panel__header:active { cursor: grabbing; }
 .ft-panel__title { font-size: 13px; font-weight: 600; }
+.ft-panel__actions { display: flex; align-items: center; gap: 6px; }
 .ft-panel__close {
   background: transparent; border: none;
   color: var(--cf-text-muted); cursor: pointer;
@@ -581,9 +580,12 @@ function applyEnrichedDesc() {
 
 .ft-panel__body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
 }
+.ft-panel__body--chat { overflow: hidden; }
+.ft-panel__body input, .ft-panel__body textarea { user-select: text; -webkit-user-select: text; }
 .ft-panel__body .form-group { margin-bottom: 8px; }
 .ft-panel__body label { font-size: 11px; color: var(--cf-text-muted); display: block; margin-bottom: 3px; }
 .ft-panel__body .input,

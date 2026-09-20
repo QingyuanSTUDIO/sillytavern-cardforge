@@ -3,6 +3,7 @@ import { createPinia } from 'pinia';
 import { createRouter, createWebHashHistory } from 'vue-router';
 import App from './App.vue';
 import errorLogger from './utils/error-logger.js';
+import { useCardStore } from './stores/card.js';
 
 // 在所有代码运行前安装错误捕获
 errorLogger.install();
@@ -29,11 +30,13 @@ import AiAssistant from './views/AiAssistant.vue';
 import CardDiagnostic from './views/CardDiagnostic.vue';
 import Statistics from './views/Statistics.vue';
 import ApiSettings from './views/ApiSettings.vue';
+import GeneralSettings from './views/GeneralSettings.vue';
 
 // Styles
 import './styles/main.scss';
 
 const routes = [
+  { path: '/settings', name: 'settings', component: GeneralSettings, meta: { title: '总设置' } },
   { path: '/', name: 'dashboard', component: Dashboard, meta: { title: '工作台' } },
   { path: '/basic', name: 'basic', component: BasicInfo, meta: { title: '基本信息' } },
   { path: '/charsetting', name: 'charsetting', component: CharSetting, meta: { title: '角色设定' } },
@@ -72,4 +75,5 @@ app.config.errorHandler = (err, instance, info) => {
 };
 app.use(createPinia());
 app.use(router);
-app.mount('#app');
+// 先恢复草稿，再开放编辑，避免用户输入被异步恢复覆盖。
+useCardStore().initializeAutosave().finally(() => app.mount('#app'));

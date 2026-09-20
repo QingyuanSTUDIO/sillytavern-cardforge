@@ -1,15 +1,19 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const logger = require('./logger');
 const { autoUpdater } = require('electron-updater');
+const { registerAutosave } = require('./autosave');
+const { registerBackground } = require('./background');
 
 const isDev = process.env.NODE_ENV === 'development';
 
 // 主进程全局错误捕获 — 必须在 app.whenReady 之前注册
 logger.installGlobalHandlers();
+registerAutosave();
 
 let mainWindow;
+registerBackground(() => mainWindow);
 
 // ============ 自动更新 ============
 autoUpdater.autoDownload = false;          // 让用户先确认再下载
@@ -111,6 +115,24 @@ function createWindow() {
     mainWindow.show();
   });
 
+  // 无边框窗口也提供原生文本编辑菜单，支持聊天文字复制及输入框粘贴。
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const items = [];
+    if (params.isEditable) {
+      items.push({ role: 'undo', label: '撤销', enabled: params.editFlags.canUndo },
+        { role: 'redo', label: '重做', enabled: params.editFlags.canRedo }, { type: 'separator' },
+        { role: 'cut', label: '剪切', enabled: params.editFlags.canCut });
+    }
+    if (params.isEditable || params.selectionText) {
+      items.push({ role: 'copy', label: '复制', enabled: params.editFlags.canCopy });
+    }
+    if (params.isEditable) {
+      items.push({ role: 'paste', label: '粘贴', enabled: params.editFlags.canPaste },
+        { type: 'separator' }, { role: 'selectAll', label: '全选' });
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: mainWindow });
+  });
+
   // F12 打开 DevTools — 仅开发环境
   if (isDev) {
     mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -140,6 +162,11 @@ app.on('activate', () => {
 });
 
 // ============ IPC Handlers ============
+
+ipcMain.handle('clipboard:writeText', (_event, text) => {
+  if (typeof text !== 'string') throw new TypeError('只能复制文本');
+  clipboard.writeText(text);
+});
 
 // Window controls
 ipcMain.on('window:minimize', () => mainWindow?.minimize());

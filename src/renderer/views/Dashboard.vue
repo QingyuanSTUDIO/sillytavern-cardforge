@@ -79,7 +79,7 @@
         </div>
 
         <div class="flex-row mt-md">
-          <button class="btn btn--primary" @click="$router.push('/editor')">编辑角色卡</button>
+          <button class="btn btn--primary" @click="$router.push('/basic')">编辑角色卡</button>
           <button class="btn btn--secondary" @click="handleExport">导出</button>
         </div>
       </div>
@@ -147,7 +147,7 @@ const showAssetImport = ref(false);
 
 function handleNew() {
   cardStore.newCard();
-  router.push('/editor');
+  router.push('/basic');
   appStore.toastSuccess('已创建新角色卡');
 }
 
@@ -163,7 +163,7 @@ async function handleImport() {
       cardStore.loadFromJson(json);
       cardStore.filePath = filePath;
       appStore.toastSuccess(`已导入: ${cardStore.cardName}`);
-      router.push('/editor');
+      router.push('/basic');
       return;
     }
 
@@ -181,7 +181,7 @@ async function handleImport() {
         if (base64) cardStore.coverImageBase64 = base64;
         cardStore.markDirty();
         appStore.toastSuccess('已设置封面图（PNG 不含角色卡数据）');
-        router.push('/editor');
+        router.push('/basic');
         return;
       }
 
@@ -192,14 +192,14 @@ async function handleImport() {
         cardStore.coverImagePath = filePath;
         if (base64) cardStore.coverImageBase64 = base64;
         appStore.toastSuccess(`已导入: ${cardStore.cardName}`);
-        router.push('/editor');
+        router.push('/basic');
       };
       const applyCoverOnly = () => {
         cardStore.coverImagePath = filePath;
         if (base64) cardStore.coverImageBase64 = base64;
         cardStore.markDirty();
         appStore.toastSuccess('已设置封面图（角色卡数据已忽略）');
-        router.push('/editor');
+        router.push('/basic');
       };
 
       if (cardStore.isDirty) {
@@ -261,7 +261,7 @@ async function handleImportFromWorldbook() {
     setTimeout(() => {
       appStore.toastInfo('请在编辑器里填写角色名 / 描述 / 开场白');
     }, 1500);
-    router.push('/editor');
+    router.push('/basic');
   } catch (e) {
     appStore.toastError(`导入失败: ${e.message}`);
   }
