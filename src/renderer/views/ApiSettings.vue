@@ -95,13 +95,18 @@
             <div class="form-group">
               <label :for="'preset-model-' + provider.id">模型</label>
               <div class="field-row">
-                <input :id="'preset-model-' + provider.id" class="input" v-model.trim="provider.model" :list="'preset-models-' + provider.id" placeholder="输入模型名，或获取后选择">
-                <datalist :id="'preset-models-' + provider.id"><option v-for="model in modelLists[provider.id] || []" :key="model" :value="model" /></datalist>
+                <select v-if="modelLists[provider.id]?.length" :id="'preset-model-' + provider.id" class="select flex-1" v-model="provider.model">
+                  <option v-if="provider.model && !modelLists[provider.id].includes(provider.model)" :value="provider.model">
+                    {{ provider.model }}（当前）
+                  </option>
+                  <option v-for="model in modelLists[provider.id]" :key="model" :value="model">{{ model }}</option>
+                </select>
+                <input v-else :id="'preset-model-' + provider.id" class="input flex-1" v-model.trim="provider.model" placeholder="输入模型名，或点击获取模型">
                 <button class="btn btn--secondary btn--sm" :disabled="modelLoading[provider.id] || !provider.apiKey || !provider.baseUrl" @click="loadModels(provider)">
                   {{ modelLoading[provider.id] ? '获取中…' : '获取模型' }}
                 </button>
               </div>
-              <p class="hint">{{ modelLists[provider.id]?.length ? '已获取 ' + modelLists[provider.id].length + ' 个模型，仍可手动填写。' : '模型名可以手动填写。' }}</p>
+              <p class="hint">{{ modelLists[provider.id]?.length ? '已获取 ' + modelLists[provider.id].length + ' 个模型，请从列表选择；也可以重新获取。' : '模型名可以手动填写。' }}</p>
             </div>
             <div class="form-group full-width">
               <label :for="'preset-temperature-' + provider.id">温度（Temperature）</label>
