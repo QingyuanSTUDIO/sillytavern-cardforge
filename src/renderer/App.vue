@@ -101,6 +101,9 @@
             <router-link to="/package" class="sidebar__item" active-class="active">
               <span class="sidebar__item-icon">·</span> 打包角色卡
             </router-link>
+            <router-link to="/tavern-link" class="sidebar__item" active-class="active">
+              <span class="sidebar__item-icon">·</span> 酒馆 Link
+            </router-link>
           </div>
 
           <div class="sidebar__section">
@@ -113,6 +116,9 @@
             </router-link>
             <router-link to="/assistant" class="sidebar__item" active-class="active">
               <span class="sidebar__item-icon">·</span> AI 助手
+            </router-link>
+            <router-link to="/agent" class="sidebar__item" active-class="active">
+              <span class="sidebar__item-icon">·</span> 创作 Agent
             </router-link>
             <router-link to="/statistics" class="sidebar__item" active-class="active">
               <span class="sidebar__item-icon">·</span> 卡片统计
@@ -177,8 +183,8 @@
       </div>
     </div>
 
-    <!-- 全局浮动工具集（AI 助手 / 诊断页隐藏） -->
-    <FloatingTools v-if="$route.path !== '/assistant' && $route.path !== '/diagnostic'" v-show="floatingTools.visible" />
+    <!-- 创作 Agent 页面保留悬浮工具；AI 助手和诊断页面隐藏。 -->
+    <FloatingTools v-if="!['/assistant', '/diagnostic'].includes($route.path)" v-show="floatingTools.visible" />
     <FloatingToolsSettings />
 
     <!-- Toast 通知 -->

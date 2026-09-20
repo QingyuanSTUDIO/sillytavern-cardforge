@@ -7,6 +7,7 @@
         <input class="input" v-model="bookName" placeholder="世界书名（默认为「未命名」）" style="max-width:320px;margin-top:4px"/>
       </div>
       <div class="flex-row worldbook-actions">
+        <router-link to="/agent" class="btn btn--secondary btn--sm">创作 Agent</router-link>
         <button class="btn btn--secondary btn--sm" @click="showAiPanel = !showAiPanel; showRefNovelPanel = false">
           {{ showAiPanel ? '关闭AI生成' : 'AI 生成条目' }}
         </button>
@@ -245,6 +246,7 @@
 
           <!-- AI 改写面板 -->
           <div v-if="showAiRewrite && wbSelectedIds.size > 0" class="mt-md">
+            <p v-if="store.cardData.extensions?.cfStrictWording" class="hint mb-sm">已启用创作 Agent 的严格用词设定，批量改写和重新生成都会优先遵守。</p>
             <div class="form-group">
               <label>改写要求</label>
               <input class="input" v-model="aiRewriteReq" placeholder="如：更详细、改成YAML格式、补充NPC细节、精简到200字以内...">
@@ -498,6 +500,13 @@ function buildRefNovelSegment() {
   const novel = (store.cardData.extensions?.cfReferenceNovel || '').trim();
   if (!novel) return '';
   return `\n\n## 参考小说素材（按它的世界观、人物风格、笔法来生成 / 改写）\n\n${novel}`;
+}
+
+// 创作 Agent 中保存的严格用词设定，世界书的批量改写和单条重生成共用。
+function buildStrictWordingSegment() {
+  const wording = (store.cardData.extensions?.cfStrictWording || '').trim();
+  if (!wording) return '';
+  return `\n\n## 严格用词设定（优先遵守）\n${wording}`;
 }
 
 // AI 生成相关
@@ -1073,10 +1082,10 @@ ${entriesData.map(e => `条目名：${e.comment}\n关键词：${(e.keys || []).j
 输出JSON数组，每个对象包含 comment（条目名）和 content（改写后的内容）：
 [{ "comment": "条目名", "content": "改写后的内容" }]
 
-每条content控制在500字以内。只输出JSON。${buildRefNovelSegment()}`;
+每条content控制在500字以内。只输出JSON。${buildStrictWordingSegment()}${buildRefNovelSegment()}`;
 
     const parsed = await chatForJsonArray(apiStore, [
-      { role: 'system', content: '你是世界书改写专家。按照用户要求改写条目内容，保持条目名不变。只输出合法JSON数组。所有内容必须用中文，禁止英文。' },
+      { role: 'system', content: '你是世界书改写专家。按照用户要求改写条目内容，保持条目名不变。严格遵守严格用词设定（如果提供）。只输出合法JSON数组。所有内容必须用中文，禁止英文。' },
       { role: 'user', content: prompt }
     ], { temperature: 0.7, maxTokens: apiStore.getModelMaxTokens(apiStore.activeProvider?.model) });
 
@@ -1124,10 +1133,10 @@ ${aiRewriteReq.value || '优化内容，使其更加详细和生动'}
 ${r.oldContent}
 
 只输出一个JSON对象：{ "comment": "${r.comment}", "content": "改写后的内容" }
-只输出JSON。${buildRefNovelSegment()}`;
+只输出JSON。${buildStrictWordingSegment()}${buildRefNovelSegment()}`;
 
     const result = await apiStore.chat([
-      { role: 'system', content: '你是世界书改写专家。只输出合法JSON对象。所有内容必须用中文，禁止英文。' },
+      { role: 'system', content: '你是世界书改写专家。严格遵守严格用词设定（如果提供）。只输出合法JSON对象。所有内容必须用中文，禁止英文。' },
       { role: 'user', content: prompt }
     ], { temperature: 0.8, maxTokens: apiStore.getModelMaxTokens(apiStore.activeProvider?.model) });
 

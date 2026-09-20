@@ -13,6 +13,7 @@
         <div class="inspiration-chat__meta">
           <span>{{ msg.name }}</span>
           <button class="btn btn--ghost btn--sm" @click="copyMessage(msg.content)">复制</button>
+          <button class="btn btn--ghost btn--sm" @click="useAsTask(msg.content)">用作创作任务</button>
         </div>
         <div class="inspiration-chat__text">{{ msg.content }}</div>
       </article>
@@ -40,6 +41,7 @@ import { useAssistantChatStore } from '../stores/assistant-chat.js';
 import { useAiNiangStore } from '../stores/ainiang.js';
 import { useAppStore } from '../stores/app.js';
 import { copyText } from '../utils/clipboard.js';
+import { useAuthoringAgentStore } from '../stores/authoring-agent.js';
 
 const chatStore = useAssistantChatStore();
 const { messages, inputText, loading } = storeToRefs(chatStore);
@@ -47,6 +49,11 @@ const niangStore = useAiNiangStore();
 const appStore = useAppStore();
 const router = useRouter();
 const messagesRef = ref(null);
+
+function useAsTask(content) {
+  useAuthoringAgentStore().task = content;
+  router.push('/agent');
+}
 
 async function scrollBottom() {
   await nextTick();

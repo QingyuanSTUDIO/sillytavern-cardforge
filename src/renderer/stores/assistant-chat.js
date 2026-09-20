@@ -4,6 +4,7 @@ import { useCardStore } from './card.js';
 import { useApiStore } from './api.js';
 import { useAppStore } from './app.js';
 import { useAiNiangStore } from './ainiang.js';
+import { useFloatingToolsStore } from './floating-tools.js';
 
 // 完整助手与悬浮窗口共享会话，收起窗口或切换页面不会中断请求。
 export const useAssistantChatStore = defineStore('assistant-chat', () => {
@@ -14,6 +15,7 @@ export const useAssistantChatStore = defineStore('assistant-chat', () => {
   const apiStore = useApiStore();
   const appStore = useAppStore();
   const niangStore = useAiNiangStore();
+  const toolSettings = useFloatingToolsStore();
   let initialization;
 
   function initialize() {
@@ -41,7 +43,7 @@ export const useAssistantChatStore = defineStore('assistant-chat', () => {
       if (inputText.value.trim() === text) inputText.value = '';
       const history = messages.value.filter(m => m.role === 'user' || m.niangId === niang.id).slice(-10);
       const chatMessages = [
-        { role: 'system', content: niangStore.buildSystemPrompt(niang, cardStore, text) },
+        { role: 'system', content: niangStore.buildSystemPrompt(niang, cardStore, text, toolSettings.contextLimits) },
         ...history.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }))
       ];
       const options = { temperature: 0.85,

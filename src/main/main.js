@@ -163,6 +163,23 @@ app.on('activate', () => {
 
 // ============ IPC Handlers ============
 
+// SillyTavern Link：通过酒馆自己的 HTTP API 读写数据。
+const { requestTavernApi } = require('./tavern-link');
+
+ipcMain.handle('tavern:status', async () => ({
+  installPath: 'E:\\SillyTavern',
+  installExists: fs.existsSync('E:\\SillyTavern'),
+  defaultUrl: 'http://127.0.0.1:8000'
+}));
+
+ipcMain.handle('tavern:request', async (_event, options = {}) => {
+  try {
+    return await requestTavernApi(options.baseUrl, options.endpoint, options.body);
+  } catch (error) {
+    return { success: false, error: error.message || String(error) };
+  }
+});
+
 ipcMain.handle('clipboard:writeText', (_event, text) => {
   if (typeof text !== 'string') throw new TypeError('只能复制文本');
   clipboard.writeText(text);

@@ -36,6 +36,7 @@
           </li>
         </ol>
         <p class="ft-settings__hint">修改立即生效，并自动保存在本机。</p>
+
       </div>
       <footer class="ft-settings__footer">
         <button class="btn btn--primary btn--sm" @click="settings.settingsOpen = false">完成</button>

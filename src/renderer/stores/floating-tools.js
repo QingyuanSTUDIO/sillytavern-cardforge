@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { useAppStore } from './app.js';
+import { WORLD_CONTEXT_FIELDS, normalizeContextLimits, validContextLimit, MAX_CONTEXT_CHARS } from '../utils/world-context-settings.js';
 
 const STORAGE_KEY = 'cf_floating_tools_settings';
 export const FLOATING_TOOLS = [
@@ -18,10 +19,12 @@ export const useFloatingToolsStore = defineStore('floating-tools', () => {
   const settingsOpen = ref(false);
   const order = ref(FLOATING_TOOLS.map(tool => tool.key));
   const hidden = ref([]);
+  const contextLimits = ref(normalizeContextLimits());
 
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
     if (saved && typeof saved === 'object') {
+      contextLimits.value = normalizeContextLimits(saved.contextLimits);
       visible.value = saved.visible !== false;
       const keys = new Set(order.value);
       const savedOrder = Array.isArray(saved.order) ? saved.order.filter(key => keys.has(key)) : [];
@@ -39,13 +42,26 @@ export const useFloatingToolsStore = defineStore('floating-tools', () => {
 
   function save() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ visible: visible.value, order: order.value, hidden: hidden.value }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ visible: visible.value, order: order.value,
+        hidden: hidden.value, contextLimits: contextLimits.value }));
     } catch {
       useAppStore().toastWarning('悬浮窗设置暂时无法保存，重启后可能恢复默认');
     }
   }
 
   function setVisible(value) { visible.value = value; save(); }
+
+  function setContextLimit(key, value) {
+    if (!WORLD_CONTEXT_FIELDS.some(field => field.key === key)) return;
+    if (!validContextLimit(value)) throw new Error(`请输入 1～${MAX_CONTEXT_CHARS.toLocaleString()} 之间的整数`);
+    contextLimits.value[key] = value;
+    save();
+  }
+
+  function resetContextLimits() {
+    contextLimits.value = normalizeContextLimits();
+    save();
+  }
 
   function canHide(key) {
     return enabledTools.value.some(tool => tool.key !== key && !tool.isJump && !tool.onlyRoute);
@@ -75,6 +91,6 @@ export const useFloatingToolsStore = defineStore('floating-tools', () => {
     save();
   }
 
-  return { visible, settingsOpen, orderedTools, enabledTools, hidden,
+  return { visible, settingsOpen, orderedTools, enabledTools, hidden, contextLimits, setContextLimit, resetContextLimits,
     setVisible, setToolVisible, canHide, moveTool, resetTools };
 });

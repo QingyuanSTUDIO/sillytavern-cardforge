@@ -156,7 +156,7 @@ async function handleImport() {
   if (!filePath) return;
 
   try {
-    if (filePath.endsWith('.json')) {
+    if (filePath.toLowerCase().endsWith('.json')) {
       const result = await api.readTextFile(filePath);
       if (!result.success) throw new Error(result.error);
       const json = JSON.parse(result.data);
@@ -167,7 +167,7 @@ async function handleImport() {
       return;
     }
 
-    if (filePath.endsWith('.png')) {
+    if (filePath.toLowerCase().endsWith('.png')) {
       // 同时读 PNG base64（用作封面 fallback）
       const fileResult = await api.readFile(filePath);
       const base64 = fileResult.success ? `data:image/png;base64,${fileResult.data}` : null;
@@ -224,7 +224,8 @@ async function handleImport() {
       return;
     }
 
-    throw new Error('不支持的文件格式');
+    const extension = filePath.split(/[/\\]/).pop().match(/\.[^.]+$/)?.[0] || '无扩展名';
+    throw new Error(`不支持的文件格式（${extension}），请选择 PNG 角色卡或 JSON 文件；普通 JPG / WEBP 图片请在「打包角色卡」中设置封面`);
   } catch (e) {
     appStore.toastError(`导入失败: ${e.message}`);
   }
@@ -233,7 +234,7 @@ async function handleImport() {
 async function handleImportFromWorldbook() {
   const filePath = await api.openFile();
   if (!filePath) return;
-  if (!filePath.endsWith('.json')) {
+  if (!filePath.toLowerCase().endsWith('.json')) {
     appStore.toastError('请选择 .json 格式的世界书文件');
     return;
   }
@@ -274,10 +275,11 @@ async function handleExport() {
     const savePath = await api.saveFile({ defaultPath: defaultName });
     if (!savePath) return;
 
-    if (savePath.endsWith('.json')) {
-      await api.writeFile(savePath, JSON.stringify(json, null, 2));
+    if (savePath.toLowerCase().endsWith('.json')) {
+      const result = await api.writeFile(savePath, JSON.stringify(json, null, 2));
+      if (!result?.success) throw new Error(result?.error || '文件写入失败');
       appStore.toastSuccess('JSON 导出成功');
-    } else if (savePath.endsWith('.png')) {
+    } else if (savePath.toLowerCase().endsWith('.png')) {
       if (!cardStore.coverImagePath) {
         // Ask user to select a cover image
         const imgPath = await api.openImage();
@@ -290,7 +292,7 @@ async function handleExport() {
       const result = await api.embedCharaData(cardStore.coverImagePath, json, savePath);
       if (!result.success) throw new Error(result.error);
       appStore.toastSuccess('PNG 角色卡导出成功');
-    }
+    } else throw new Error('请选择 .png 或 .json 扩展名保存角色卡');
   } catch (e) {
     appStore.toastError(`导出失败: ${e.message}`);
   }

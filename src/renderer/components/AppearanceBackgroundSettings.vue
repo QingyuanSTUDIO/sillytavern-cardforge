@@ -112,7 +112,7 @@ function changeColor(event) {
 .hint { margin-top: 8px; font-size: 12px; line-height: 1.7; color: var(--cf-text-secondary); }
 .appearance-settings__buttons { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .appearance-settings__filename { overflow-wrap: anywhere; }
-.appearance-settings__grid { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr); gap: 24px; margin-top: 24px; padding: 18px; background: #151824; border-radius: 10px; }
+.appearance-settings__grid { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr); gap: 24px; margin-top: 24px; padding: 18px; background: var(--cf-bg-secondary); border-radius: var(--cf-radius-md); }
 .appearance-settings__controls fieldset { border: 0; padding: 0; min-width: 0; }
 .appearance-settings__controls fieldset:disabled { opacity: .45; }
 .appearance-settings__color { display: flex; gap: 10px; align-items: center; }
@@ -122,7 +122,7 @@ function changeColor(event) {
 .appearance-settings__controls label { display: flex; justify-content: space-between; gap: 8px; }
 .appearance-settings__controls .select { width: 100%; }
 .appearance-settings__preview { position: relative; height: 180px; overflow: hidden; border: 1px solid var(--cf-border-light); border-radius: 8px; }
-.appearance-settings__preview > span { position: absolute; left: 10px; bottom: 10px; z-index: 3; padding: 3px 8px; border-radius: 4px; color: #fff; background: #151824; font-size: 12px; }
+.appearance-settings__preview > span { position: absolute; left: 10px; bottom: 10px; z-index: 3; padding: 3px 8px; border-radius: 4px; color: #fff; background: rgba(0, 0, 0, .65); font-size: 12px; }
 .appearance-settings__layers { list-style: none; margin: 12px 0; padding: 0; }
 .appearance-settings__layers li { display: flex; align-items: center; gap: 12px; padding: 10px; margin-top: 6px; border: 1px solid var(--cf-border-light); border-radius: 5px; font-size: 12px; }
 .appearance-settings__layers span { color: var(--cf-text-secondary); }

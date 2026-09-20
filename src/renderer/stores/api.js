@@ -5,55 +5,26 @@ export const useApiStore = defineStore('api', () => {
   // State
   const providers = ref([]);
   const activeProviderId = ref(null);
+  const settingsLoaded = ref(false);
+  const saveState = ref('loading');
+  const saveError = ref('');
+  const lastSavedAt = ref(null);
   let _autoSaveLoaded = false;
   let _saveTimer = null;
+  let _saveRevision = 0;
+  let _saveQueue = Promise.resolve();
 
-  // Create default providers
-  function initDefaults() {
-    if (providers.value.length === 0) {
-      providers.value = [
-        {
-          id: 'openai',
-          name: 'OpenAI 兼容',
-          type: 'openai',
-          baseUrl: 'https://api.openai.com/v1',
-          apiKey: '',
-          model: 'gpt-4o',
-          temperature: 0.8,
-          enabled: true
-        },
-        {
-          id: 'claude',
-          name: 'Claude (Anthropic)',
-          type: 'claude',
-          baseUrl: 'https://api.anthropic.com',
-          apiKey: '',
-          model: 'claude-sonnet-4-20250514',
-          temperature: 0.8,
-          enabled: false
-        },
-        {
-          id: 'gemini',
-          name: 'Gemini (Google)',
-          type: 'gemini',
-          baseUrl: 'https://generativelanguage.googleapis.com',
-          apiKey: '',
-          model: 'gemini-2.0-flash',
-          temperature: 0.8,
-          enabled: false
-        }
-      ];
-    }
+  function isProviderReady(provider) {
+    return !!(provider?.apiKey?.trim() && provider?.baseUrl?.trim() && provider?.model?.trim());
   }
 
   const activeProvider = computed(() => {
     if (activeProviderId.value) {
       const p = providers.value.find(p => p.id === activeProviderId.value);
-      // 主动选的就用，即使没启用也用（用户意图优先）
-      if (p && p.apiKey) return p;
+      if (p?.enabled && isProviderReady(p)) return p;
     }
-    // fallback：第一个启用且有 key 的
-    return providers.value.find(p => p.enabled && p.apiKey);
+    // 选中项被删除、禁用或配置不完整时，使用第一个可用预设。
+    return providers.value.find(p => p.enabled && isProviderReady(p));
   });
 
   const isConfigured = computed(() => {
@@ -369,34 +340,56 @@ export const useApiStore = defineStore('api', () => {
 
   // Persistence
   async function loadFromDisk() {
+    _autoSaveLoaded = false;
+    settingsLoaded.value = false;
+    saveState.value = 'loading';
     try {
       const settings = await window.cardForgeAPI.loadSettings();
-      if (settings.apiProviders) providers.value = settings.apiProviders;
-      if (settings.activeProviderId) activeProviderId.value = settings.activeProviderId;
-    } catch (e) {}
-    initDefaults();
-    // 加载完成后才启动自动保存监听，避免初始化时触发写盘
-    _autoSaveLoaded = true;
+      // 已有固定 ID 的配置也按普通预设保留；空数组是有效状态，不补回默认项。
+      providers.value = Array.isArray(settings?.apiProviders) ? settings.apiProviders : [];
+      activeProviderId.value = settings?.activeProviderId || null;
+      saveError.value = '';
+      saveState.value = 'idle';
+      settingsLoaded.value = true;
+      _autoSaveLoaded = true;
+    } catch (e) {
+      saveError.value = '读取 API 预设失败：' + e.message;
+      saveState.value = 'error';
+    }
   }
 
   // 先读后写，不会覆盖其他 store 的字段
   // 必须深度克隆，避免 Vue reactive proxy 通过 IPC structured clone 失败
   async function saveToDisk() {
-    let settings = {};
-    try {
-      settings = await window.cardForgeAPI.loadSettings() || {};
-    } catch (e) {}
-    settings.apiProviders = JSON.parse(JSON.stringify(providers.value));
-    settings.activeProviderId = activeProviderId.value;
-    const result = await window.cardForgeAPI.saveSettings(settings);
-    if (result && result.success === false) {
-      throw new Error(result.error || '保存失败');
-    }
+    if (!_autoSaveLoaded) return;
+    clearTimeout(_saveTimer);
+    const revision = _saveRevision;
+    const snapshot = JSON.parse(JSON.stringify(providers.value));
+    const selectedId = activeProviderId.value;
+    const operation = _saveQueue.catch(() => {}).then(async () => {
+      if (revision === _saveRevision) saveState.value = 'saving';
+      try {
+        const settings = await window.cardForgeAPI.loadSettings() || {};
+        settings.apiProviders = snapshot;
+        settings.activeProviderId = selectedId;
+        const result = await window.cardForgeAPI.saveSettings(settings);
+        if (!result?.success) throw new Error(result?.error || '保存失败');
+        lastSavedAt.value = new Date().toISOString();
+        if (revision === _saveRevision) { saveState.value = 'saved'; saveError.value = ''; }
+      } catch (e) {
+        if (revision === _saveRevision) { saveState.value = 'error'; saveError.value = e.message; }
+        throw e;
+      }
+    });
+    _saveQueue = operation;
+    return operation;
   }
 
   // debounce 自动保存（300ms）
   function scheduleSave() {
     if (!_autoSaveLoaded) return;
+    _saveRevision++;
+    saveState.value = 'pending';
     if (_saveTimer) clearTimeout(_saveTimer);
     _saveTimer = setTimeout(() => {
       saveToDisk().catch(e => {
@@ -410,25 +403,27 @@ export const useApiStore = defineStore('api', () => {
   }
 
   // 监听整个 providers 数组的深度变化（包括 apiKey/baseUrl/model/enabled 等）
-  watch(providers, scheduleSave, { deep: true });
-  watch(activeProviderId, scheduleSave);
+  watch([providers, activeProviderId], scheduleSave, { deep: true, flush: 'sync' });
 
   // 设置当前激活服务商
   function setActiveProvider(id) {
+    const provider = providers.value.find(p => p.id === id);
+    if (id !== null && (!provider?.enabled || !isProviderReady(provider))) return;
     activeProviderId.value = id;
   }
 
   function addProvider() {
-    const id = 'custom_' + Date.now();
+    const id = 'custom_' + crypto.randomUUID();
     providers.value.push({
       id,
-      name: '自定义服务',
+      name: '新 API 预设',
       type: 'openai',
       baseUrl: '',
       apiKey: '',
       model: '',
       temperature: 0.8,
-      enabled: true
+      enabled: true,
+      collapsed: false
     });
     return id;
   }
@@ -469,8 +464,9 @@ export const useApiStore = defineStore('api', () => {
   }
 
   return {
-    providers, activeProviderId, activeProvider, isConfigured,
-    chat, chatWithProvider, getModelMaxTokens, fetchModels, loadFromDisk, saveToDisk, addProvider, removeProvider, initDefaults,
+    providers, activeProviderId, activeProvider, isConfigured, isProviderReady,
+    settingsLoaded, saveState, saveError, lastSavedAt,
+    chat, chatWithProvider, getModelMaxTokens, fetchModels, loadFromDisk, saveToDisk, addProvider, removeProvider,
     setActiveProvider
   };
 });

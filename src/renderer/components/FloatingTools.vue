@@ -77,6 +77,8 @@
           <button class="btn btn--primary btn--sm" :disabled="loading || entrySelectedId === ''" @click="runOptimizeEntry">
             {{ loading ? '改写中...' : '改写' }}
           </button>
+          <button class="btn btn--secondary btn--sm" :disabled="entrySelectedId === ''"
+            @click="router.push({ path: '/agent', query: { entry: String(entrySelectedId), direction: entryDirection } }); expanded = false">审阅式改写</button>
           <div v-if="aiResult" class="ft-result">
             <div class="ft-result__head">
               <span>改写结果</span>
@@ -301,7 +303,7 @@ function copyResult() {
 
 // 拼角色卡上下文，传 matchText 启用绿灯关键词匹配
 function cardCtx(matchText = '') {
-  return buildCardContext(cardStore, matchText);
+  return buildCardContext(cardStore, matchText, toolSettings.contextLimits);
 }
 
 // ========== 工具1：写开场白 ==========
@@ -375,7 +377,8 @@ async function runOptimizeEntry() {
   try {
     const entry = worldEntries.value.find(e => e.id === entrySelectedId.value);
     if (!entry) throw new Error('未找到该条目');
-    const sys = '你是 SillyTavern 世界书条目改写专家。按"绝对零度+白描+特征差异化"原则改写，禁八股语言。保持原条目的核心信息和长度框架。';
+    const strictWording = cardStore.cardData.extensions?.cfStrictWording || '';
+    const sys = `你是 SillyTavern 世界书条目改写专家。按"绝对零度+白描+特征差异化"原则改写，禁八股语言。保持原条目的核心信息和长度框架。${strictWording ? '严格遵守用户提供的严格用词设定。' : ''}`;
     const matchText = `${(entry.keys || []).join(' ')} ${entryDirection.value || ''}`;
     const usr = `请改写以下世界书条目：
 
@@ -387,7 +390,7 @@ ${entry.content || ''}
 【改写方向】
 ${entryDirection.value || '提升写作质量，去除套路化描写'}
 
-——以下是角色卡其他背景设定，改写时保持风格和世界观自洽——
+——以下是角色卡其他背景设定（其中包含创作约定和严格用词设定），改写时保持风格和世界观自洽——
 ${cardCtx(matchText)}
 
 直接输出改写后的完整内容，不要前缀、不要解释。`;

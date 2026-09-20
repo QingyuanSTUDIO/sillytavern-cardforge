@@ -48,5 +48,9 @@ contextBridge.exposeInMainWorld('cardForgeAPI', {
 
   // Auto update
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
-  getAppVersion: () => ipcRenderer.invoke('update:getVersion')
+  getAppVersion: () => ipcRenderer.invoke('update:getVersion'),
+
+  // SillyTavern Link
+  tavernStatus: () => ipcRenderer.invoke('tavern:status'),
+  tavernRequest: (options) => ipcRenderer.invoke('tavern:request', options)
 });
