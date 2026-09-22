@@ -7,7 +7,7 @@ const STORAGE_KEY = 'cf_floating_tools_settings';
 export const FLOATING_TOOLS = [
   { key: 'chat', short: 'AI 聊天' },
   { key: 'greeting', short: '开场白' },
-  { key: 'optimize_entry', short: '改条目', onlyRoute: '/worldbook' },
+  { key: 'optimize_entry', short: '改条目' },
   { key: 'npc_name', short: '起NPC名' },
   { key: 'explain_code', short: '解释码' },
   { key: 'enrich_desc', short: '补 desc' },

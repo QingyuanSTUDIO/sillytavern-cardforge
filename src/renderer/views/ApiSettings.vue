@@ -95,18 +95,26 @@
             <div class="form-group">
               <label :for="'preset-model-' + provider.id">模型</label>
               <div class="field-row">
-                <select v-if="modelLists[provider.id]?.length" :id="'preset-model-' + provider.id" class="select flex-1" v-model="provider.model">
+                <select v-if="modelLists[provider.id]?.length" :id="'preset-model-' + provider.id" class="select flex-1" v-model="provider.model" @change="resetReasoning(provider)">
                   <option v-if="provider.model && !modelLists[provider.id].includes(provider.model)" :value="provider.model">
                     {{ provider.model }}（当前）
                   </option>
                   <option v-for="model in modelLists[provider.id]" :key="model" :value="model">{{ model }}</option>
                 </select>
-                <input v-else :id="'preset-model-' + provider.id" class="input flex-1" v-model.trim="provider.model" placeholder="输入模型名，或点击获取模型">
+                <input v-else :id="'preset-model-' + provider.id" class="input flex-1" v-model.trim="provider.model" placeholder="输入模型名，或点击获取模型" @input="resetReasoning(provider)">
                 <button class="btn btn--secondary btn--sm" :disabled="modelLoading[provider.id] || !provider.apiKey || !provider.baseUrl" @click="loadModels(provider)">
                   {{ modelLoading[provider.id] ? '获取中…' : '获取模型' }}
                 </button>
+                <button class="btn btn--ghost btn--sm" :disabled="reasoningLoading[provider.id] || !apiStore.isProviderReady(provider)" @click="probeReasoning(provider)">
+                  {{ reasoningLoading[provider.id] ? '探测中…' : '探测思考能力' }}
+                </button>
               </div>
               <p class="hint">{{ modelLists[provider.id]?.length ? '已获取 ' + modelLists[provider.id].length + ' 个模型，请从列表选择；也可以重新获取。' : '模型名可以手动填写。' }}</p>
+              <p class="hint">探测思考能力会发送一条很短的请求，可能产生少量费用；成功只代表参数被接受，不保证服务商实际执行。</p>
+              <p v-if="reasoningResults[provider.id]" class="reasoning-result" :class="'reasoning-result--' + reasoningResults[provider.id].status">
+                <strong>{{ reasoningResults[provider.id].label }}</strong>
+                <span>（{{ reasoningResults[provider.id].parameter }}={{ reasoningResults[provider.id].value }}）</span>：{{ reasoningResults[provider.id].detail }}
+              </p>
             </div>
             <div class="form-group full-width">
               <label :for="'preset-temperature-' + provider.id">温度（Temperature）</label>
@@ -117,6 +125,33 @@
                   @input="provider.temperature = Math.min(2, Math.max(0, parseFloat($event.target.value) || 0))">
               </div>
               <p class="hint">0 更稳定，2 更随机。默认 0.8；生成 JSON 建议 0.6～0.8。</p>
+            </div>
+            <div class="form-group full-width reasoning-settings">
+              <label>思考强度</label>
+              <div class="field-row">
+                <select class="select" v-model="provider.reasoningModelType" aria-label="模型系列">
+                  <option v-for="family in modelFamilyOptions" :key="family.value" :value="family.value">{{ family.label }}</option>
+                </select>
+                <select class="select" v-model="provider.reasoningEffort"
+                  :disabled="provider.reasoningEnabled !== true || provider.type !== 'openai'" aria-label="推理强度">
+                  <option v-for="effort in getReasoningEffortOptions(provider.reasoningModelType)" :key="effort" :value="effort">
+                    {{ effort }}
+                  </option>
+                </select>
+                <label class="toggle-label">
+                  <input type="checkbox" v-model="provider.reasoningEnabled" :disabled="provider.type !== 'openai'">
+                  启用思考强度
+                </label>
+              </div>
+              <p class="hint">仅在启用后向 OpenAI 兼容接口发送 <code>reasoning_effort</code>；关闭时使用服务商默认行为。中转站是否支持由服务商决定，建议先点击“探测思考能力”。</p>
+            </div>
+            <div class="form-group full-width streaming-settings">
+              <label>输出方式</label>
+              <label class="toggle-label">
+                <input type="checkbox" v-model="provider.streamingEnabled">
+                启用流式输出
+              </label>
+              <p class="hint">开启后，支持流式协议的接口会边生成边返回内容；关闭时等待完整回复后再显示。部分中转站可能不支持流式请求。</p>
             </div>
           </div>
           <div class="preset-footer">
@@ -136,12 +171,15 @@
 import { reactive, computed, nextTick } from 'vue';
 import { useApiStore } from '../stores/api.js';
 import { useAppStore } from '../stores/app.js';
+import { modelFamilyOptions, getReasoningEffortOptions } from '../utils/reasoning-probe.js';
 
 const apiStore = useApiStore();
 const appStore = useAppStore();
 const showKeys = reactive({});
 const modelLists = reactive({});
 const modelLoading = reactive({});
+const reasoningLoading = reactive({});
+const reasoningResults = reactive({});
 const testing = reactive({});
 const nameInputs = new Map();
 const currentProvider = computed(() => apiStore.activeProvider);
@@ -184,11 +222,15 @@ async function addPreset() {
 function deletePreset(provider) {
   appStore.confirmAction('删除 API 预设“' + presetName(provider) + '”及其本地 Key 和配置？', () => {
     apiStore.removeProvider(provider.id);
-    for (const state of [showKeys, modelLists, modelLoading, testing]) delete state[provider.id];
+    for (const state of [showKeys, modelLists, modelLoading, reasoningLoading, reasoningResults, testing]) delete state[provider.id];
     nameInputs.delete(provider.id);
   });
 }
-function resetModels(provider) { delete modelLists[provider.id]; }
+function resetModels(provider) {
+  delete modelLists[provider.id];
+  delete reasoningResults[provider.id];
+}
+function resetReasoning(provider) { delete reasoningResults[provider.id]; }
 function snapshotOf(provider) { return JSON.parse(JSON.stringify(provider)); }
 function stillMatches(snapshot, includeModel = false) {
   const provider = apiStore.providers.find(item => item.id === snapshot.id);
@@ -207,6 +249,21 @@ async function loadModels(provider) {
   } catch (e) {
     if (stillMatches(snapshot)) appStore.toastError('获取模型失败：' + e.message);
   } finally { delete modelLoading[provider.id]; }
+}
+async function probeReasoning(provider) {
+  if (reasoningLoading[provider.id]) return;
+  const snapshot = snapshotOf(provider);
+  reasoningLoading[provider.id] = true;
+  delete reasoningResults[provider.id];
+  try {
+    const result = await apiStore.probeReasoning(snapshot);
+    if (!stillMatches(snapshot, true)) return;
+    reasoningResults[provider.id] = result;
+  } catch (e) {
+    if (stillMatches(snapshot, true)) {
+      reasoningResults[provider.id] = { status: 'unknown', label: '无法确认', detail: e.message || '探测请求失败' };
+    }
+  } finally { delete reasoningLoading[provider.id]; }
 }
 async function testConnection(provider) {
   if (testing[provider.id]) return;
@@ -231,6 +288,7 @@ async function retrySave() {
   display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
 }
 .current-summary, .header-actions, .field-row, .temperature-row { display: flex; align-items: center; gap: 10px; }
+.field-row { flex-wrap: wrap; }
 .current-summary, .header-actions { flex-wrap: wrap; }
 .current-summary { min-width: 0; overflow-wrap: anywhere; }
 .current-summary strong { color: var(--cf-accent); }
@@ -258,12 +316,17 @@ async function retrySave() {
 .full-width { grid-column: 1 / -1; }
 .form-group, .field-row { min-width: 0; }
 .field-row .input { flex: 1; min-width: 0; }
+.field-row .select { flex: 1; min-width: 160px; }
 .field-row .btn { flex-shrink: 0; }
 .input, .select { color-scheme: dark; }
 .temperature-slider { flex: 1; min-width: 0; accent-color: var(--cf-accent); cursor: pointer; }
 .temperature-input { width: 80px; flex-shrink: 0; text-align: center; }
 .toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--cf-text-secondary); }
 .toggle-label input { accent-color: var(--cf-accent); }
+.reasoning-result { margin: 6px 0 0; line-height: 1.6; }
+.reasoning-result--accepted { color: var(--cf-success, #86efac); }
+.reasoning-result--rejected { color: var(--cf-warning, #fbbf24); }
+.reasoning-result--unknown { color: var(--cf-text-secondary); }
 .preset-footer { border-top: 1px solid var(--cf-border); padding-top: 16px; }
 @media (max-width: 1000px) { .preset-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>

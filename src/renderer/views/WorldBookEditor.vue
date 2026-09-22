@@ -21,6 +21,7 @@
         <button class="btn btn--ghost" @click="toggleBatchMode" v-if="entries.length > 0">
           {{ batchMode ? '退出批量' : '批量操作' }}
         </button>
+        <button class="btn btn--secondary" :disabled="!entries.length && !sections.length" @click="autoSortWorldBook" title="按工具内的分隔栏及条目顺序，重排全书酒馆顺序">自动排序</button>
         <button class="btn wb-section-button" @click="addSection">+ 添加分隔栏</button>
         <button class="btn btn--primary" @click="handleAdd()">+ 新建条目</button>
       </div>
@@ -295,7 +296,7 @@
       <span class="badge badge--info">{{ entries.filter(e => !e.constant && e.enabled).length }} 触发</span>
       <span class="badge badge--danger">{{ entries.filter(e => !e.enabled).length }} 禁用</span>
     </div>
-    <p v-if="sections.length" class="wb-grouping-hint">条目按酒馆顺序自动归组；拖拽和条目左侧序号只调整工具内显示顺序。{{ filterActive ? '筛选期间临时展开所有分隔栏。' : '' }}</p>
+    <p v-if="sections.length" class="wb-grouping-hint">拖动分隔栏标题可整体移动，自动同步各栏范围和栏内条目的酒馆顺序。自动排序以工具内顺序为准，每栏至少预留 1000 个顺序。条目单独拖拽仅调整栏内显示顺序。{{ filterActive ? '筛选期间临时展开所有分隔栏；整栏移动和自动排序仍包含隐藏条目。' : '' }}</p>
 
     <!-- 条目列表 -->
     <div v-if="filteredEntries.length === 0 && sections.length === 0 && !showAiPanel" class="card">
@@ -309,12 +310,20 @@
     <div v-else>
       <section v-for="group in visibleGroups" :key="group.section?.id || 'ungrouped'"
         :data-section-id="group.section?.id"
-        :class="{ 'wb-section': group.section }">
-        <div v-if="group.section" class="wb-section__header">
+        :class="{ 'wb-section': group.section, 'wb-section--dragging': sectionDragSourceId === group.section?.id, 'wb-section--drop-before': sectionDragOverId === group.section?.id && !sectionDropAfter, 'wb-section--drop-after': sectionDragOverId === group.section?.id && sectionDropAfter }">
+        <div v-if="group.section" class="wb-section__header"
+          @dragover.prevent="onSectionDragOver($event, group.section.id)"
+          @dragleave="onSectionDragLeave($event, group.section.id)"
+          @drop="onSectionDrop($event, group.section.id)">
           <button class="wb-section__toggle" :aria-expanded="!group.section.collapsed || filterActive"
+            :aria-label="'展开或折叠' + group.section.name"
             @click="toggleSection(group.section)">
             <span>{{ !group.section.collapsed || filterActive ? '▼' : '▶' }}</span>
-            <strong>{{ group.section.name }}</strong>
+            <span class="wb-section__drag-title" draggable="true" title="拖动标题移动整栏，点击展开或折叠"
+              @dragstart.stop="onSectionDragStart($event, group.section.id)"
+              @dragend="onSectionDragEnd">
+              <span aria-hidden="true">⠿</span><strong>{{ group.section.name }}</strong>
+            </span>
             <span class="wb-section__count">{{ group.total }} 条</span>
             <span v-if="filterActive" class="wb-section__count">匹配 {{ group.entries.length }} 条</span>
             <span class="wb-section__range">条目酒馆顺序：{{ group.range }}</span>
@@ -368,7 +377,7 @@ import { buildCardContext } from '../utils/card-context.js';
 import { chatForJsonArray, parseAiJsonArray } from '../utils/json-repair.js';
 import WorldEntryCard from '../components/WorldEntryCard.vue';
 import WorldSectionEditor from '../components/WorldSectionEditor.vue';
-import { sortedWorldSections, groupWorldEntries, sectionForEntry } from '../utils/world-sections.js';
+import { sortedWorldSections, groupWorldEntries, reflowWorldBookSections, sectionForEntry } from '../utils/world-sections.js';
 
 const store = useCardStore();
 const apiStore = useApiStore();
@@ -409,8 +418,7 @@ function moveSection(section, direction) {
   if (target < 0 || target >= all.length) return;
   all.splice(index, 1);
   all.splice(target, 0, section);
-  all.forEach((item, i) => { item.sortOrder = i + 1; });
-  store.cardData.character_book.extensions.cfSections = all;
+  reflowWorldBookSections(store.cardData.character_book, all.map(item => item.id));
   store.markDirty();
 }
 
@@ -922,14 +930,69 @@ const dragSourceId = ref(null);
 const dragOverId = ref(null);
 const dragEnabledId = ref(null);  // 只有按下手柄的那条才允许拖
 
+const sectionDragSourceId = ref(null);
+const sectionDragOverId = ref(null);
+const sectionDropAfter = ref(false);
+
+function autoSortWorldBook() {
+  reflowWorldBookSections(store.cardData.character_book);
+  store.markDirty();
+  appStore.toastSuccess('已按工具内顺序更新全书分隔栏范围和条目酒馆顺序');
+}
+
+function onSectionDragStart(event, id) {
+  onDragEnd();
+  sectionDragSourceId.value = id;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('application/x-cardforge-section', id);
+  event.dataTransfer.setData('text/plain', id);
+}
+
+function onSectionDragOver(event, id) {
+  if (!sectionDragSourceId.value || sectionDragSourceId.value === id) return;
+  event.dataTransfer.dropEffect = 'move';
+  sectionDragOverId.value = id;
+  const bounds = event.currentTarget.getBoundingClientRect();
+  sectionDropAfter.value = event.clientY >= bounds.top + bounds.height / 2;
+}
+
+function onSectionDragLeave(event, id) {
+  if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return;
+  if (sectionDragOverId.value === id) sectionDragOverId.value = null;
+}
+
+function onSectionDrop(event, targetId) {
+  event.preventDefault();
+  const sourceId = sectionDragSourceId.value;
+  if (!sourceId || sourceId === targetId) { onSectionDragEnd(); return; }
+  const ids = sections.value.map(section => section.id);
+  if (!ids.includes(sourceId) || !ids.includes(targetId)) { onSectionDragEnd(); return; }
+  const bounds = event.currentTarget.getBoundingClientRect();
+  const after = event.clientY >= bounds.top + bounds.height / 2;
+  const reordered = ids.filter(id => id !== sourceId);
+  reordered.splice(reordered.indexOf(targetId) + (after ? 1 : 0), 0, sourceId);
+  onSectionDragEnd();
+  if (ids.every((id, index) => id === reordered[index])) return;
+  reflowWorldBookSections(store.cardData.character_book, reordered);
+  store.markDirty();
+  appStore.toastSuccess('已移动整栏，栏内条目和酒馆顺序已同步');
+}
+
+function onSectionDragEnd() {
+  sectionDragSourceId.value = null;
+  sectionDragOverId.value = null;
+  sectionDropAfter.value = false;
+}
+
 function onDragStart(e, id) {
+  onSectionDragEnd();
   dragSourceId.value = id;
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', String(id));
 }
 
 function onDragOver(e, id) {
-  if (id === dragSourceId.value) return;
+  if (dragSourceId.value == null || id === dragSourceId.value) return;
   dragOverId.value = id;
   e.dataTransfer.dropEffect = 'move';
 }
@@ -1163,6 +1226,11 @@ ${r.oldContent}
 .wb-section__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px; background: #2563eb20; }
 .wb-section__toggle { display: flex; flex: 1; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 160px; border: 0; background: none; color: #93c5fd; text-align: left; cursor: pointer; font: inherit; }
 .wb-section__toggle strong { overflow-wrap: anywhere; }
+.wb-section__drag-title { display: inline-flex; align-items: center; gap: 6px; cursor: grab; user-select: none; }
+.wb-section__drag-title:active { cursor: grabbing; }
+.wb-section--dragging { opacity: 0.45; }
+.wb-section--drop-before { border-top: 3px solid #60a5fa; }
+.wb-section--drop-after { border-bottom: 3px solid #60a5fa; }
 .wb-section__count, .wb-section__range, .wb-section__bounds { font-size: 12px; }
 .wb-section__count { padding: 2px 6px; background: #60a5fa20; border-radius: 4px; }
 .wb-section__range, .wb-section__bounds { color: #93b8e0; }

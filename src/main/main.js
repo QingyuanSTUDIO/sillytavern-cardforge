@@ -1,4 +1,11 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard } = require('electron');
+
+// 在初始化会话和自动保存前抢占单实例锁，避免多个进程共用缓存和草稿。
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  return;
+}
+
 const path = require('path');
 const fs = require('fs');
 const logger = require('./logger');
@@ -14,6 +21,14 @@ registerAutosave();
 
 let mainWindow;
 registerBackground(() => mainWindow);
+
+app.on('second-instance', () => {
+  // 首个窗口尚未创建时，继续由正常启动流程打开。
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
 
 // ============ 自动更新 ============
 autoUpdater.autoDownload = false;          // 让用户先确认再下载

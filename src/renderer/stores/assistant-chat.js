@@ -28,6 +28,7 @@ export const useAssistantChatStore = defineStore('assistant-chat', () => {
     if (!text || loading.value) return;
     loading.value = true;
     let userMessage;
+    let assistantMessage;
     try {
       await initialize();
       const niang = { ...niangStore.youxi };
@@ -46,18 +47,27 @@ export const useAssistantChatStore = defineStore('assistant-chat', () => {
         { role: 'system', content: niangStore.buildSystemPrompt(niang, cardStore, text, toolSettings.contextLimits) },
         ...history.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }))
       ];
+      const streaming = (customProvider || apiStore.activeProvider)?.streamingEnabled === true;
+      assistantMessage = streaming
+        ? { id: crypto.randomUUID(), role: 'assistant', niangId: niang.id,
+          name: niang.name, content: '', color: niang.color }
+        : null;
+      if (assistantMessage) messages.value.push(assistantMessage);
       const options = { temperature: 0.85,
-        maxTokens: apiStore.getModelMaxTokens(customProvider?.model || apiStore.activeProvider?.model) };
+        maxTokens: apiStore.getModelMaxTokens(customProvider?.model || apiStore.activeProvider?.model),
+        onChunk: streaming ? chunk => { assistantMessage.content += chunk; } : undefined };
       const result = customProvider
         ? await apiStore.chatWithProvider(customProvider, chatMessages, options)
         : await apiStore.chat(chatMessages, options);
-      messages.value.push({ id: crypto.randomUUID(), role: 'assistant', niangId: niang.id,
+      if (assistantMessage) assistantMessage.content = result;
+      else messages.value.push({ id: crypto.randomUUID(), role: 'assistant', niangId: niang.id,
         name: niang.name, content: result, color: niang.color });
     } catch (e) {
       if (userMessage) {
         messages.value = messages.value.filter(m => m.id !== userMessage.id);
         if (!inputText.value) inputText.value = text;
       }
+      if (assistantMessage) messages.value = messages.value.filter(m => m.id !== assistantMessage.id);
       appStore.toastError('发送失败：' + e.message);
     } finally {
       loading.value = false;

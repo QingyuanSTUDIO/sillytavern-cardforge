@@ -258,10 +258,16 @@ const availableTools = computed(() => toolSettings.enabledTools.filter(t => {
   return true;
 }));
 
-const activeTool = ref(availableTools.value.find(tool => !tool.isJump)?.key || 'chat');
-watch(availableTools, (tools) => {
-  if (!tools.find(t => t.key === activeTool.value)) {
-    activeTool.value = tools.find(tool => !tool.isJump)?.key || 'chat';
+function defaultTool(tools) {
+  if (route.path === '/agent' && tools.some(tool => tool.key === 'optimize_entry')) return 'optimize_entry';
+  return tools.find(tool => !tool.isJump)?.key || 'chat';
+}
+const activeTool = ref(defaultTool(availableTools.value));
+watch([availableTools, () => route.path], ([tools, path], [, previousPath]) => {
+  if (path === '/agent' && previousPath !== '/agent' && tools.some(tool => tool.key === 'optimize_entry')) {
+    activeTool.value = 'optimize_entry';
+  } else if (!tools.find(t => t.key === activeTool.value)) {
+    activeTool.value = defaultTool(tools);
   }
 });
 

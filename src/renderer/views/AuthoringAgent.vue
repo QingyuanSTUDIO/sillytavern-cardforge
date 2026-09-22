@@ -67,7 +67,7 @@
             <button v-for="example in examples" :key="example.label" class="btn btn--ghost btn--sm" @click="agent.task = example.task">{{ example.label }}</button>
           </div>
           <div class="agent-task-footer">
-            <span class="agent-hint">世界书正文、人物设定和开场白均可提出修改。{{ agent.round ? '重新生成会替换当前待审阅方案。' : '生成不会直接修改角色卡。' }}</span>
+            <span class="agent-hint">可同轮新增条目、创建分隔栏并整理归类，也可修改人物设定和开场白。{{ agent.round ? '重新生成会替换当前待审阅方案。' : '生成不会直接修改角色卡。' }}</span>
             <button class="btn btn--primary" :disabled="agent.busy || !agent.task.trim() || !!agent.providerError" @click="agent.generate()">{{ agent.busy ? '正在整理修改方案…' : agent.round ? '重新生成方案' : '生成修改方案' }}</button>
           </div>
           <p v-if="agent.busy" class="agent-hint" role="status">可以切换页面，请求会继续。期间编辑了原文，采纳时会检查冲突。</p>
@@ -95,7 +95,7 @@
             <label><input type="checkbox" :checked="allSelected" :disabled="agent.busy" @change="selectAll($event.target.checked)"> 全选待审阅</label>
             <button class="btn btn--primary btn--sm" :disabled="agent.busy || !agent.selectedCount" @click="agent.applySelected()">采纳选中 {{ agent.selectedCount }} 项</button>
           </div>
-          <p v-if="!agent.round.changes.length" class="agent-hint">本轮没有提出正文改动，可根据上面的建议继续完善任务。</p>
+          <p v-if="!agent.round.changes.length" class="agent-hint">本轮没有提出改动，可根据上面的建议继续完善任务。</p>
         </section>
 
         <article v-for="change in agent.round?.changes || []" :key="change.id" class="agent-panel agent-change">
@@ -105,14 +105,24 @@
           </header>
           <p class="agent-prose">{{ change.reason }}</p>
           <p v-if="change.sources.length" class="agent-hint">AI 标注的参考：{{ change.sources.join('、') }}</p>
-          <p v-if="change.kind === 'create'" class="agent-hint">关键词：{{ change.keys.join('、') || '未设置' }} · 酒馆顺序 {{ change.order }} · {{ change.constant ? '常驻条目' : '关键词触发条目' }}</p>
-          <AgentTextDiff :before="change.before" :after="change.after" />
-          <details v-if="change.status === 'pending'" class="agent-refine"><summary>采纳前手动调整正文</summary><textarea class="textarea" rows="8" v-model="change.after" :disabled="agent.busy" :aria-label="'调整' + change.title + '的建议正文'"></textarea></details>
+          <p v-if="change.kind === 'create'" class="agent-hint">关键词：{{ change.keys.join('、') || '未设置' }} · 建议酒馆顺序 {{ change.order }}（采纳分组后按分组调整） · {{ change.constant ? '常驻条目' : '关键词触发条目' }}</p>
+          <div v-if="change.kind === 'organize'" class="agent-organization-plan">
+            <p class="agent-hint">将按以下工具内顺序整理；所有分隔栏的酒馆范围及栏内条目的酒馆顺序都会同步重排，每栏至少预留 1000 个顺序：</p>
+            <ul>
+              <li v-for="section in change.organization.sections" :key="section.sortOrder">
+                <strong>{{ section.name }}</strong>：{{ organizationEntryNames(change, section.entryTargets) || '（空）' }}
+              </li>
+              <li><strong>未分组</strong>：{{ organizationEntryNames(change, change.organization.ungroupedTargets) || '（无）' }}</li>
+            </ul>
+            <p v-if="pendingCreations(change).length" class="agent-hint">采纳此分组方案会一并新增：{{ pendingCreations(change).map(item => item.title).join('、') }}。请同时审阅下方对应正文，整批改动可一起撤销。</p>
+          </div>
+          <AgentTextDiff v-if="change.kind !== 'organize'" :before="change.before" :after="change.after" />
+          <details v-if="change.status === 'pending' && change.kind !== 'organize'" class="agent-refine"><summary>采纳前手动调整正文</summary><textarea class="textarea" rows="8" v-model="change.after" :disabled="agent.busy" :aria-label="'调整' + change.title + '的建议正文'"></textarea></details>
           <p v-if="change.status === 'pending' && agent.conflict(change)" class="agent-warning">{{ agent.conflict(change) }}</p>
           <div class="agent-actions agent-change__actions">
             <button v-if="change.status === 'pending'" class="btn btn--ghost btn--sm" :disabled="agent.busy" @click="change.status = 'dismissed'; change.selected = false">忽略</button>
             <button v-if="change.status === 'dismissed'" class="btn btn--ghost btn--sm" :disabled="agent.busy" @click="change.status = 'pending'">恢复待审阅</button>
-            <button v-if="change.status === 'pending'" class="btn btn--primary btn--sm" :disabled="agent.busy || !!agent.conflict(change)" @click="agent.applyChanges([change.id])">采纳这一项</button>
+            <button v-if="change.status === 'pending'" class="btn btn--primary btn--sm" :disabled="agent.busy || !!agent.conflict(change)" @click="agent.applyChanges([change.id])">{{ pendingCreations(change).length ? `采纳分组及 ${pendingCreations(change).length} 项新增` : '采纳这一项' }}</button>
           </div>
         </article>
 
@@ -152,7 +162,10 @@ function providerLabel(provider) {
 const examples = [
   { label: '检查设定冲突', task: '检查提供的人物设定和世界书是否存在矛盾、提前泄露的秘密或人物动机缺口。说明依据，只对有明确依据的问题提出修改。' },
   { label: '联动完善人物', task: '完善当前人物的核心动机与矛盾，结合已引用的世界书补充人物关系，并提出对应的开场白调整。保留既定事实。' },
-  { label: '补充世界书', task: '根据人物设定和创作约定，提出缺少的组织、地点或人物关系条目，说明每条的用途，避免重复已有设定。' }
+  { label: '补充世界书', task: '根据人物设定和创作约定，提出缺少的组织、地点或人物关系条目，说明每条的用途，避免重复已有设定。' },
+  { label: '新建世界书条目', task: '新建一个世界书条目。请先判断最适合补充的设定类型，再给出明确的条目名称、至少一个触发关键词、是否设为常驻、建议的酒馆顺序，以及可以直接放入世界书的完整正文。不要修改已有条目。' },
+  { label: '搭建世界书框架', task: '根据创作约定搭建世界书框架，新增不超过 20 个能支撑世界观的条目，提供完整正文和触发设置，并在同一轮创建合适的分隔栏，把新增条目及现有条目整理归类、排序。避免重复已有设定，不改写已有条目正文。' },
+  { label: '整理世界书', task: '整理当前世界书：按人物、组织、地点、规则或事件等主题提出分隔栏；把每个现有条目都放入合适的分隔栏或列为未分组，并给出清晰的排列顺序。允许新建分隔栏，不修改任何条目正文。请只返回一个 organize 改动方案。' }
 ];
 const changeStatus = { pending: '待审阅', applied: '已采纳', dismissed: '已忽略', undone: '已撤销' };
 const includedCount = computed(() => agent.context.references.filter(r => ['full', 'truncated'].includes(r.status)).length);
@@ -164,6 +177,13 @@ const visibleReferences = computed(() => {
 const pending = computed(() => agent.round?.changes.filter(change => change.status === 'pending') || []);
 const allSelected = computed(() => pending.value.length > 0 && pending.value.every(change => change.selected));
 function selectAll(value) { pending.value.forEach(change => { change.selected = value; }); }
+function pendingCreations(change) {
+  return agent.organizationCreations(change).filter(item => item.status === 'pending');
+}
+function organizationEntryNames(change, tokens) {
+  return tokens.map(token => (change.organization.entryTitles?.[token] || token)
+    + (Object.hasOwn(change.organization.newEntries || {}, token) ? '（新增）' : '')).join('、');
+}
 function referenceStatus(reference) {
   return { full: '完整读取', truncated: '已截断', budget: '预算不足，未发送', excluded: '未发送' }[reference.status];
 }
@@ -206,6 +226,8 @@ watch(() => [route.query.entry, route.query.direction], ([entry, direction]) => 
 .agent-task-footer > span { flex: 1; min-width: 180px; }
 .agent-task-footer > button { flex-shrink: 0; }
 .agent-prose { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-size: 13px; line-height: 1.9; margin-bottom: 12px; }
+.agent-organization-plan { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--cf-border); border-radius: 6px; background: var(--cf-bg-tertiary); }
+.agent-organization-plan ul { margin: 4px 0 0; padding-left: 22px; font-size: 12px; line-height: 1.8; }
 .agent-notes, .agent-questions ul { padding-left: 22px; font-size: 13px; line-height: 1.9; }
 .agent-questions { padding: 12px; border-radius: 6px; background: #60a5fa12; margin-top: 12px; }
 .agent-warning { color: #fbbf24; font-size: 12px; line-height: 1.7; margin-top: 8px; }
